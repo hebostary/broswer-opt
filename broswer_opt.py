@@ -1,6 +1,12 @@
+import os
 import time
 import random
 import logging
+import win32con
+import win32api
+import win32gui
+import ctypes
+import ctypes.wintypes
 from threading import Thread
 from threading import Semaphore
 from selenium import webdriver
@@ -100,18 +106,66 @@ class Driver():
         bd.quit()
 
     def run(self):
+        global run_command
+
         while (True):
-            self.__sem.acquire()
-            if (self.__bd_num == self.__bd_max):
+            if (run_command == False) or (self.__bd_num == self.__bd_max):
                 time.sleep(1)
                 continue 
-            
+            self.__sem.acquire()
             th = Thread(target=self.once_search_task)
             th.setDaemon(True)
             th.start()
-        
+
+class HotKey(Thread):
+    def __init__(self,name):
+        Thread.__init__(self)
+        self.name = name
+    def run(self):
+        logging.info("\n***Start of thread "+str(self.name)+"***\n")
+        hot_key_main()
+        logging.info("\n***End of thread "+str(self.name)+"***\n")
+
+ 
+def hot_key_main():
+    global run_command
+    run_command = True
+ 
+    user32 = ctypes.windll.user32
+    while(True):
+        if not user32.RegisterHotKey(None, 98, win32con.MOD_WIN, win32con.VK_F9):#win+f9=run program
+            logging.error("Unable to register id 98 for run command.")
+        if not user32.RegisterHotKey(None, 99, win32con.MOD_WIN, win32con.VK_F10):#win+f10=pause program
+            logging.error("Unable to register id 99 for pause command.")
+        if not user32.RegisterHotKey(None, 100, win32con.MOD_WIN, win32con.VK_F11):#win+f10=pause program
+            logging.error("Unable to register id 100 for exit command.")
+        try:
+            msg = ctypes.wintypes.MSG()
+            if user32.GetMessageA(ctypes.byref(msg), None, 0, 0) != 0:
+                if msg.message == win32con.WM_HOTKEY:
+                    if msg.wParam == 99:
+                        run_command = False
+                        logging.info("Program pausing...")
+                    elif msg.wParam == 98:
+                        run_command = True
+                        logging.info("Program running...")
+                    elif msg.wParam == 100:
+                        logging.info("Program exitting...")
+                        os.sys.exit()
+                user32.TranslateMessage(ctypes.byref(msg))
+                user32.DispatchMessageA(ctypes.byref(msg))
+        finally:
+            del msg
+            user32.UnregisterHotKey(None, 98)
+            user32.UnregisterHotKey(None, 99)
+
 
 if __name__ == "__main__":
     init_log_config()
+
+    thread_hotKey = HotKey("thread_hotKey")
+    thread_hotKey.setDaemon(True)
+    thread_hotKey.start()
+
     driver = Driver()
     driver.run()
