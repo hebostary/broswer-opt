@@ -27,8 +27,6 @@ g_sem = Semaphore(1)
 g_run_event = Event()
 g_run_event.set()
 
-link_list = ('sina', 'sohu', 'ifeng', 'baidu', 'xinhuanet', 'weibo')
-
 def init_log_config():
     if os.path.exists(LOG_FILE):
         fd = open(LOG_FILE, "rb+")
@@ -89,12 +87,20 @@ class Driver():
         print("Creating new broswer driver...")
         user_options = Options()
         user_options.add_argument('disable-infobars')
-        #user_options.add_argument('--start-maximized')
+        user_options.add_argument('--start-maximized')
         user_options.add_argument('--no-sandbox')
         user_options.add_argument('--disable-dev-shm-usage')
         user_options.add_argument('--incognito')
+        user_options.add_argument('--disable-plugins')
+        user_options.add_argument('–disable-javascript')
+        user_options.add_argument('–disable-java')
+        user_options.add_argument('--disable-gpu')
+        user_options.add_argument('–single-process')
 
         user_options.binary_location = self.__cm.get_broswer_location()
+
+        prefs = {'profile.default_content_setting_values' :{'notifications' : 2}}
+        user_options.add_experimental_option("prefs", prefs)
 
         bd = None
         try:
@@ -103,11 +109,6 @@ class Driver():
             logging.error("Failed to create new broswer driver, [SessionNotCreatedException] %s." % e.msg)
             print("Failed to create new broswer driver, [SessionNotCreatedException] %s." % e.msg)
         finally:
-            g_mutex.acquire()
-            self.__bd_num = self.__bd_num + 1
-            g_mutex.release()
-            logging.info("Created active broswer driver %d" % self.__bd_num)
-            print("Created active broswer driver %d" % self.__bd_num)
             return bd
         
     def once_search_task(self):
@@ -115,30 +116,32 @@ class Driver():
         if bd == None:
             g_sem.release()
             return
-        bd.get(self.__cm.get_default_url())
-        time.sleep(1)
+
+        g_mutex.acquire()
+        self.__bd_num = self.__bd_num + 1
+        g_mutex.release()
+        logging.info("Created active broswer driver %d" % self.__bd_num)
+        print("Created active broswer driver %d" % self.__bd_num)
+
         try:
+            bd.get(self.__cm.get_default_url())
+            time.sleep(1)
             input_kw = bd.find_element_by_class_name("sch_inbox")
             input_kw = input_kw.find_element_by_name("word")
             input_kw.send_keys(self.__cm.get_random_skw())
 
-            button = bd.find_element_by_id('j_search_sbm')
-            button.click()
-            time.sleep(2)
+            bd.find_element_by_id('j_search_sbm').click()
+            time.sleep(1)
 
+            bd.switch_to.window(bd.window_handles[0])
+            res = bd.find_element_by_class_name('mz-list').find_elements_by_name('2')
             t = 2
             while(t > 0):
                 bd.switch_to.window(bd.window_handles[0])
-                index = random.randint(0, 2)
-                if index == 0:
-                    bd.find_element_by_id("nav").find_element_by_class_name('txt').click()
-                elif index == 1:
-                    bd.find_element_by_class_name("cont-list").find_element_by_name('2').click()
-                elif index == 2:
-                    bd.find_element_by_class_name("J_bd").click()
-
+                res[random.randint(0, len(res)-1)].click()
                 time.sleep(1)
                 t = t - 1
+
             bd.minimize_window()
         except Exception as e:
             logging.error("Driver internal error, msg: %s." % e.msg)
@@ -150,6 +153,7 @@ class Driver():
             self.__bd_num = self.__bd_num - 1    
             g_mutex.release()  
             bd.quit()
+            print('*******************************A broswer exiting...****************************************')
         return
 
     def run(self):
@@ -184,11 +188,9 @@ class HotKey(Thread):
 def hot_key_main():
     user32 = ctypes.windll.user32
     while(True):
-        #win+f9=run program win32con.MOD_WIN
         if not user32.RegisterHotKey(None, 98, 0, win32con.VK_F9):
             logging.error("Unable to register id 98 for run command.")
             print("Unable to register id 98 for run command.")
-        #win+f10=pause program
         if not user32.RegisterHotKey(None, 99, 0, win32con.VK_F10):
             logging.error("Unable to register id 99 for pause command.")
             print("Unable to register id 99 for pause command.")
